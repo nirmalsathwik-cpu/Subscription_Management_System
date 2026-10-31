@@ -4,20 +4,29 @@ const assert = require('node:assert/strict');
 process.env.DB_FILE = ':memory:';
 process.env.WEBHOOK_SECRET = 'test-secret';
 const { app } = require('../Backend/server');
+const { SAMPLE_USERS } = require('../Backend/auth/seedUsers');
 
-let server, B;
+let server, B, TOKEN;
 const H = { 'Content-Type': 'application/json' };
-async function api(method, path, body) {
-  const r = await fetch(B + path, { method, headers: H, body: body === undefined ? undefined : JSON.stringify(body) });
+// token: undefined = use the admin login, null = send no token, string = use that token
+async function api(method, path, body, token) {
+  const t = token === undefined ? TOKEN : token;
+  const headers = t ? { ...H, Authorization: 'Bearer ' + t } : H;
+  const r = await fetch(B + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
   let data = null;
   try { data = await r.json(); } catch {}
   return { status: r.status, data };
 }
-
 test.before(async () => {
   await new Promise((resolve) => { server = app.listen(0, resolve); });
   B = `http://localhost:${server.address().port}`;
+  const admin = SAMPLE_USERS.find((u) => u.role === 'admin');
+  const login = await api('POST', '/auth/login', { loginId: admin.username, password: admin.password }, null);
+  assert.equal(login.status, 200, 'could not log in as the seeded admin');
+  TOKEN = login.data.token;
 });
+
+
 test.after(() => { server.closeAllConnections?.(); server.close(); });
 
 test('create, list and edit a tax', async () => {
@@ -89,4 +98,18 @@ test('patching a rule re-validates it', async () => {
   assert.equal(ok.data.value, 15);
   assert.equal(ok.data.usage_limit, 3);                        // untouched fields survive
   assert.equal((await api('PATCH', '/discount-rules/9999', { value: 5 })).status, 404);
+});
+
+test('tax and discount rules are admin-only: no token gives 401, staff gives 403', async () => {
+  const staff = SAMPLE_USERS.find((u) => u.role === 'staff');
+  const st = await api('POST', '/auth/login', { loginId: staff.username, password: staff.password }, null);
+  assert.equal(st.status, 200);
+  for (const [method, path, body] of [
+    ['GET', '/taxes'], ['POST', '/taxes', { name: 'Nope', rate: 5 }],
+    ['GET', '/discount-rules'], ['POST', '/discount-rules', { name: 'Nope', type: 'percent', value: 5 }],
+  ]) {
+    assert.equal((await api(method, path, body, null)).status, 401, `${method} ${path} without token`);
+    assert.equal((await api(method, path, body, st.data.token)).status, 403, `${method} ${path} as staff`);
+  }
+  assert.equal((await api('GET', '/taxes')).status, 200); // admin still allowed
 });

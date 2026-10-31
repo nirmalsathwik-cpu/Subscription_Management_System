@@ -5,15 +5,16 @@ const assert = require('node:assert/strict');
 process.env.DB_FILE = ':memory:';
 process.env.WEBHOOK_SECRET = 'test-secret';
 const { app } = require('../Backend/server');
+const { SAMPLE_USERS } = require('../Backend/auth/seedUsers');
 
-let server, B;
+let server, B, TOKEN;
 const JSON_H = { 'Content-Type': 'application/json' };
 const HOOK_H = { ...JSON_H, 'x-webhook-secret': 'test-secret' };
 
 async function api(method, path, body, headers = JSON_H) {
     const r = await fetch(B + path, {
         method,
-        headers,
+        headers: TOKEN ? { ...headers, Authorization: 'Bearer ' + TOKEN } : headers,
         body: body === undefined ? undefined : JSON.stringify(body),
     });
     let data = null;
@@ -33,8 +34,13 @@ async function unpaid() {
 test.before(async () => {
     await new Promise((resolve) => { server = app.listen(0, resolve); });
     B = `http://localhost:${server.address().port}`;
+    const admin = SAMPLE_USERS.find((u) => u.role === 'admin');
+    const login = await api('POST', '/auth/login', { loginId: admin.username, password: admin.password });
+    assert.equal(login.status, 200, 'could not log in as the seeded admin');
+    TOKEN = login.data.token;
     await api('POST', '/run-billing'); // creates the invoices we will pay
 });
+
 
 test.after(() => {
     server.closeAllConnections?.();
