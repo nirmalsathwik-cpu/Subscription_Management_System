@@ -40,6 +40,62 @@ CREATE TABLE IF NOT EXISTS payments (
                                         gateway_ref TEXT UNIQUE
 );
 CREATE TABLE IF NOT EXISTS app_state (key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE IF NOT EXISTS taxes (
+                                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                     name TEXT NOT NULL,
+                                     rate REAL NOT NULL CHECK(rate >= 0 AND rate <= 100)   -- percent
+    );
+CREATE TABLE IF NOT EXISTS products (
+                                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                        name TEXT NOT NULL,
+                                        type TEXT,
+                                        sales_price REAL NOT NULL,
+                                        cost_price REAL,
+                                        notes TEXT,
+                                        tax_id INTEGER REFERENCES taxes(id)
+    );
+CREATE TABLE IF NOT EXISTS product_variants (
+                                                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                                product_id INTEGER NOT NULL REFERENCES products(id),
+    attribute TEXT NOT NULL,        -- 'Brand'
+    value TEXT NOT NULL,            -- 'Odoo'
+    extra_price REAL NOT NULL DEFAULT 0   -- 560
+    );
+CREATE TABLE IF NOT EXISTS subscription_lines (
+                                                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                                  subscription_id INTEGER NOT NULL REFERENCES subscriptions(id),
+    product_id INTEGER NOT NULL REFERENCES products(id),
+    variant_id INTEGER REFERENCES product_variants(id),
+    quantity INTEGER NOT NULL CHECK(quantity > 0),
+    unit_price REAL NOT NULL,
+    tax_id INTEGER REFERENCES taxes(id)
+    );
+CREATE TABLE IF NOT EXISTS discount_rules (
+                                              id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                              name TEXT NOT NULL,
+                                              type TEXT NOT NULL CHECK(type IN ('percent','fixed')),
+    value REAL NOT NULL CHECK(value > 0),
+    min_purchase REAL,
+    min_quantity INTEGER,
+    start_date TEXT,
+    end_date TEXT,
+    usage_limit INTEGER,
+    times_used INTEGER NOT NULL DEFAULT 0,
+    product_id INTEGER REFERENCES products(id),       -- NULL = whole subscription
+    subscription_id INTEGER REFERENCES subscriptions(id)  -- NULL = any subscription
+    );
+CREATE TABLE IF NOT EXISTS invoice_lines (
+                                             id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                             invoice_id INTEGER NOT NULL REFERENCES invoices(id),
+    product_id INTEGER,
+    description TEXT,
+    quantity INTEGER NOT NULL,
+    unit_price REAL NOT NULL,
+    discount REAL NOT NULL DEFAULT 0,
+    tax REAL NOT NULL DEFAULT 0,
+    amount REAL NOT NULL
+    );
+
 
 CREATE INDEX IF NOT EXISTS idx_subs_billing ON subscriptions(status, next_billing_date);
 CREATE INDEX IF NOT EXISTS idx_subs_customer ON subscriptions(customer_id);
