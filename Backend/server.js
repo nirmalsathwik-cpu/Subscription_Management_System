@@ -16,68 +16,54 @@ if (!process.env.WEBHOOK_SECRET)
 
 // ---------- 1. TABLES ----------
 db.exec(`
-CREATE TABLE IF NOT EXISTS plans (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL,
-  price REAL NOT NULL CHECK(price > 0),
-  cycle TEXT NOT NULL CHECK(cycle IN ('monthly','yearly'))
-);
-CREATE TABLE IF NOT EXISTS customers (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL,
-  email TEXT UNIQUE
-);
-CREATE TABLE IF NOT EXISTS subscriptions (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  customer_id INTEGER NOT NULL REFERENCES customers(id),
-  plan_id INTEGER NOT NULL REFERENCES plans(id),
-  start_date TEXT NOT NULL,
-  discount_pct REAL NOT NULL DEFAULT 0 CHECK(discount_pct BETWEEN 0 AND 100),
-  cycles_billed INTEGER NOT NULL DEFAULT 0,
-  next_billing_date TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','paused','closed'))
-);
-CREATE TABLE IF NOT EXISTS invoices (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  subscription_id INTEGER NOT NULL REFERENCES subscriptions(id),
-  period_start TEXT NOT NULL,
-  amount REAL NOT NULL,
-  status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','paid','overdue')),
-  due_date TEXT NOT NULL,
-  paid_at TEXT,
-  UNIQUE(subscription_id, period_start)
-);
-CREATE TABLE IF NOT EXISTS payments (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  invoice_id INTEGER NOT NULL REFERENCES invoices(id),
-  amount REAL NOT NULL,
-  method TEXT,
-  status TEXT NOT NULL CHECK(status IN ('success','failed')),
-  note TEXT,
-  paid_on TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS app_state (key TEXT PRIMARY KEY, value TEXT);
-
-CREATE INDEX IF NOT EXISTS idx_subs_billing ON subscriptions(status, next_billing_date);
-CREATE INDEX IF NOT EXISTS idx_subs_customer ON subscriptions(customer_id);
-CREATE INDEX IF NOT EXISTS idx_inv_status_due ON invoices(status, due_date);
-CREATE INDEX IF NOT EXISTS idx_inv_paid ON invoices(paid_at);
-CREATE INDEX IF NOT EXISTS idx_pay_invoice ON payments(invoice_id);
-
--- invoices: add 'void'
-status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','paid','overdue','void')),
-       
-       -- payments: add gateway_ref
-CREATE TABLE IF NOT EXISTS payments (
-                                      id INTEGER PRIMARY KEY AUTOINCREMENT,
-                                      invoice_id INTEGER NOT NULL REFERENCES invoices(id),
-  amount REAL NOT NULL,
-  method TEXT,
-  status TEXT NOT NULL CHECK(status IN ('success','failed')),
-  note TEXT,
-  paid_on TEXT NOT NULL,
-  gateway_ref TEXT UNIQUE
+  CREATE TABLE IF NOT EXISTS plans (
+                                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                     name TEXT NOT NULL,
+                                     price REAL NOT NULL CHECK(price > 0),
+    cycle TEXT NOT NULL CHECK(cycle IN ('monthly','yearly'))
+    );
+  CREATE TABLE IF NOT EXISTS customers (
+                                         id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                         name TEXT NOT NULL,
+                                         email TEXT UNIQUE
   );
+  CREATE TABLE IF NOT EXISTS subscriptions (
+                                             id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                             customer_id INTEGER NOT NULL REFERENCES customers(id),
+    plan_id INTEGER NOT NULL REFERENCES plans(id),
+    start_date TEXT NOT NULL,
+    discount_pct REAL NOT NULL DEFAULT 0 CHECK(discount_pct BETWEEN 0 AND 100),
+    cycles_billed INTEGER NOT NULL DEFAULT 0,
+    next_billing_date TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','paused','closed'))
+    );
+  CREATE TABLE IF NOT EXISTS invoices (
+                                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                        subscription_id INTEGER NOT NULL REFERENCES subscriptions(id),
+    period_start TEXT NOT NULL,
+    amount REAL NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','paid','overdue','void')),
+    due_date TEXT NOT NULL,
+    paid_at TEXT,
+    UNIQUE(subscription_id, period_start)
+    );
+  CREATE TABLE IF NOT EXISTS payments (
+                                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                        invoice_id INTEGER NOT NULL REFERENCES invoices(id),
+    amount REAL NOT NULL,
+    method TEXT,
+    status TEXT NOT NULL CHECK(status IN ('success','failed')),
+    note TEXT,
+    paid_on TEXT NOT NULL,
+    gateway_ref TEXT UNIQUE
+    );
+  CREATE TABLE IF NOT EXISTS app_state (key TEXT PRIMARY KEY, value TEXT);
+
+  CREATE INDEX IF NOT EXISTS idx_subs_billing ON subscriptions(status, next_billing_date);
+  CREATE INDEX IF NOT EXISTS idx_subs_customer ON subscriptions(customer_id);
+  CREATE INDEX IF NOT EXISTS idx_inv_status_due ON invoices(status, due_date);
+  CREATE INDEX IF NOT EXISTS idx_inv_paid ON invoices(paid_at);
+  CREATE INDEX IF NOT EXISTS idx_pay_invoice ON payments(invoice_id);
 `);
 
 // ---------- HELPERS ----------
@@ -267,21 +253,22 @@ app.patch('/subscriptions/:id/status', (req, res) => {
       db.prepare('UPDATE subscriptions SET cycles_billed=?, next_billing_date=? WHERE id=?').run(n, next, sub.id);
     }
     db.prepare('UPDATE subscriptions SET status=? WHERE id=?').run(status, sub.id);
+    if (status === 'closed') voidUnpaidInvoices(sub.id);
   })();
   res.json(db.prepare('SELECT * FROM subscriptions WHERE id=?').get(sub.id));
 });
 
-// Invoices (paginated, optional ?status=pending|paid|overdue)
+// Invoices (paginated, optional ?status=pending|paid|overdue|void)
 app.get('/invoices', (req, res) => {
   markOverdue();
   const { limit, offset } = paging(req);
-  const status = ['pending', 'paid', 'overdue'].includes(req.query.status) ? req.query.status : null;
+  const status = ['pending', 'paid', 'overdue', 'void'].includes(req.query.status) ? req.query.status : null;
   const where = status ? 'WHERE i.status = ?' : '';
   const args = status ? [status] : [];
   const total = db.prepare(`SELECT COUNT(*) c FROM invoices i ${where}`).get(...args).c;
   res.set('X-Total-Count', String(total));
   res.json(
-    db.prepare(`
+      db.prepare(`
       SELECT i.*, c.name AS customer_name, p.name AS plan_name
       FROM invoices i
       JOIN subscriptions s ON s.id = i.subscription_id
@@ -292,9 +279,32 @@ app.get('/invoices', (req, res) => {
   );
 });
 
-// Payment history for an invoice
+app.get('/invoices/:id', (req, res) => {
+  markOverdue();
+  const inv = db.prepare(`
+    SELECT i.*, c.name AS customer_name, p.name AS plan_name
+    FROM invoices i
+    JOIN subscriptions s ON s.id = i.subscription_id
+    JOIN customers c ON c.id = s.customer_id
+    JOIN plans p ON p.id = s.plan_id
+    WHERE i.id = ?`).get(req.params.id);
+  if (!inv) return res.status(404).json({ error: 'invoice not found' });
+  inv.payments = db.prepare('SELECT * FROM payments WHERE invoice_id=? ORDER BY id DESC').all(inv.id);
+  res.json(inv);
+});
+
 app.get('/invoices/:id/payments', (req, res) => {
+  if (!db.prepare('SELECT 1 FROM invoices WHERE id=?').get(req.params.id))
+    return res.status(404).json({ error: 'invoice not found' });
   res.json(db.prepare('SELECT * FROM payments WHERE invoice_id=? ORDER BY id DESC').all(req.params.id));
+});
+
+app.post('/invoices/:id/void', (req, res) => {
+  const inv = db.prepare('SELECT * FROM invoices WHERE id=?').get(req.params.id);
+  if (!inv) return res.status(404).json({ error: 'invoice not found' });
+  if (inv.status === 'paid') return res.status(409).json({ error: 'cannot void a paid invoice' });
+  db.prepare("UPDATE invoices SET status='void' WHERE id=?").run(inv.id);
+  res.json({ ok: true, status: 'void' });
 });
 
 // Run billing: create invoices for every active subscription that is due.
