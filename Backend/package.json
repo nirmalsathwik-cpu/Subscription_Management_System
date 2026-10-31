@@ -5,6 +5,7 @@
   "scripts": {
     "start": "node server.js"
   },
+  "test": "node --test",
   "dependencies": {
     "better-sqlite3": "^13.0.3",
     "cors": "^2.8.5",
