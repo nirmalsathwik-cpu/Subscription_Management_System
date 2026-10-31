@@ -1,0 +1,11 @@
+[
+  {
+    "id": 1,
+    "invoice_id": 7,
+    "amount": 7999.2,
+    "method": "card",
+    "status": "failed",
+    "note": "insufficient funds",
+    "paid_on": "2026-11-01"
+  }
+]

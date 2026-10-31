@@ -1,0 +1,72 @@
+[
+  {
+    "id": 5,
+    "customer_id": 5,
+    "plan_id": 1,
+    "start_date": "2026-10-20",
+    "discount_pct": 0,
+    "cycles_billed": 1,
+    "next_billing_date": "2026-11-20",
+    "status": "paused",
+    "customer_name": "Priya",
+    "plan_name": "Basic",
+    "price": 499,
+    "cycle": "monthly"
+  },
+  {
+    "id": 4,
+    "customer_id": 4,
+    "plan_id": 3,
+    "start_date": "2025-11-01",
+    "discount_pct": 20,
+    "cycles_billed": 2,
+    "next_billing_date": "2027-11-01",
+    "status": "active",
+    "customer_name": "John",
+    "plan_name": "Enterprise",
+    "price": 9999,
+    "cycle": "yearly"
+  },
+  {
+    "id": 3,
+    "customer_id": 3,
+    "plan_id": 2,
+    "start_date": "2026-10-15",
+    "discount_pct": 0,
+    "cycles_billed": 1,
+    "next_billing_date": "2026-11-15",
+    "status": "active",
+    "customer_name": "Meera",
+    "plan_name": "Pro",
+    "price": 999,
+    "cycle": "monthly"
+  },
+  {
+    "id": 2,
+    "customer_id": 2,
+    "plan_id": 2,
+    "start_date": "2026-11-01",
+    "discount_pct": 10,
+    "cycles_billed": 1,
+    "next_billing_date": "2026-12-01",
+    "status": "active",
+    "customer_name": "Ravi",
+    "plan_name": "Pro",
+    "price": 999,
+    "cycle": "monthly"
+  },
+  {
+    "id": 1,
+    "customer_id": 1,
+    "plan_id": 1,
+    "start_date": "2026-10-01",
+    "discount_pct": 0,
+    "cycles_billed": 2,
+    "next_billing_date": "2026-12-01",
+    "status": "active",
+    "customer_name": "Asha",
+    "plan_name": "Basic",
+    "price": 499,
+    "cycle": "monthly"
+  }
+]

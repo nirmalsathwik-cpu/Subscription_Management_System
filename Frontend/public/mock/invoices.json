@@ -1,0 +1,79 @@
+[
+  {
+    "id": 7,
+    "subscription_id": 4,
+    "period_start": "2026-11-01",
+    "amount": 7999.2,
+    "status": "pending",
+    "due_date": "2026-11-08",
+    "paid_at": null,
+    "customer_name": "John",
+    "plan_name": "Enterprise"
+  },
+  {
+    "id": 6,
+    "subscription_id": 2,
+    "period_start": "2026-11-01",
+    "amount": 899.1,
+    "status": "paid",
+    "due_date": "2026-11-08",
+    "paid_at": "2026-11-01",
+    "customer_name": "Ravi",
+    "plan_name": "Pro"
+  },
+  {
+    "id": 5,
+    "subscription_id": 1,
+    "period_start": "2026-11-01",
+    "amount": 499,
+    "status": "pending",
+    "due_date": "2026-11-08",
+    "paid_at": null,
+    "customer_name": "Asha",
+    "plan_name": "Basic"
+  },
+  {
+    "id": 4,
+    "subscription_id": 1,
+    "period_start": "2026-10-01",
+    "amount": 499,
+    "status": "overdue",
+    "due_date": "2026-10-08",
+    "paid_at": null,
+    "customer_name": "Asha",
+    "plan_name": "Basic"
+  },
+  {
+    "id": 3,
+    "subscription_id": 5,
+    "period_start": "2026-10-20",
+    "amount": 499,
+    "status": "paid",
+    "due_date": "2026-10-27",
+    "paid_at": "2026-10-21",
+    "customer_name": "Priya",
+    "plan_name": "Basic"
+  },
+  {
+    "id": 2,
+    "subscription_id": 4,
+    "period_start": "2025-11-01",
+    "amount": 7999.2,
+    "status": "paid",
+    "due_date": "2025-11-08",
+    "paid_at": "2025-11-03",
+    "customer_name": "John",
+    "plan_name": "Enterprise"
+  },
+  {
+    "id": 1,
+    "subscription_id": 3,
+    "period_start": "2026-10-15",
+    "amount": 999,
+    "status": "paid",
+    "due_date": "2026-10-22",
+    "paid_at": "2026-10-16",
+    "customer_name": "Meera",
+    "plan_name": "Pro"
+  }
+]
