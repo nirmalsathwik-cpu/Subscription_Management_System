@@ -107,3 +107,38 @@ test('cannot void a paid invoice', async () => {
 test('payments list gives 404 for unknown invoice', async () => {
     assert.equal((await api('GET', '/invoices/9999/payments')).status, 404);
 });
+
+test('closing a subscription voids its unpaid invoices', async () => {
+    // Own customer and subscription, so this test does not depend on the other tests
+    const today = (await api('GET', '/dashboard-stats')).data.today;
+    const cust = (await api('POST', '/customers', { name: 'Close Test', email: 'close.test@example.com' })).data;
+    const sub = (await api('POST', '/subscriptions',
+        { customer_id: cust.id, plan_id: 1, start_date: today })).data;
+    await api('POST', '/run-billing');
+
+    const all = (await api('GET', '/invoices?limit=200')).data;
+    const inv = all.find((x) => x.subscription_id === sub.id);
+    assert.ok(inv, 'billing should create an invoice for the new subscription');
+    assert.notEqual(inv.status, 'paid');
+
+    const r = await api('PATCH', `/subscriptions/${sub.id}/status`, { status: 'closed' });
+    assert.equal(r.status, 200);
+    assert.equal(r.data.status, 'closed');
+
+    assert.equal((await api('GET', `/invoices/${inv.id}`)).data.status, 'void');
+    assert.equal((await pay(inv)).status, 409); // a void invoice cannot be paid
+});
+
+test('closing a subscription never voids a paid invoice', async () => {
+    const today = (await api('GET', '/dashboard-stats')).data.today;
+    const cust = (await api('POST', '/customers', { name: 'Paid Test', email: 'paid.test@example.com' })).data;
+    const sub = (await api('POST', '/subscriptions',
+        { customer_id: cust.id, plan_id: 1, start_date: today })).data;
+    await api('POST', '/run-billing');
+
+    const inv = (await api('GET', '/invoices?limit=200')).data.find((x) => x.subscription_id === sub.id);
+    assert.equal((await pay(inv)).status, 200);
+
+    assert.equal((await api('PATCH', `/subscriptions/${sub.id}/status`, { status: 'closed' })).status, 200);
+    assert.equal((await api('GET', `/invoices/${inv.id}`)).data.status, 'paid');
+});
