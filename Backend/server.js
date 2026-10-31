@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const Database = require('better-sqlite3');
 
 const app = express();
+app.disable('x-powered-by');
 const fs = require('fs');
 const path = require('path');
 app.use(cors());
@@ -18,6 +19,9 @@ if (!process.env.WEBHOOK_SECRET)
     console.warn('WARNING: WEBHOOK_SECRET not set, using insecure default "dev-secret"');
 
 // ---------- 1. TABLES ----------
+if (db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='users'").get() &&
+    !db.prepare('PRAGMA table_info(users)').all().some((c) => c.name === 'username'))
+    db.exec('ALTER TABLE users ADD COLUMN username TEXT');
 db.exec(fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8'));
 
 // ---------- HELPERS ----------
@@ -110,13 +114,31 @@ if (db.prepare('SELECT COUNT(*) c FROM plans').get().c === 0) {
     })();
 }
 
-// ---------- 3. ENDPOINTS ----------
+require('./auth/seedUsers')(db);
+
+// ---------- 3. LOGIN GATE ----------
+const auth = require('./auth/middleware')(db);
+const OPEN_PATHS = [/^\/auth\//, /^\/payment-webhook$/];
+const [authenticate, authorize] = auth.requireRole('admin', 'staff');
+app.use((req, res, next) =>
+    OPEN_PATHS.some((re) => re.test(req.path))
+        ? next()
+        : authenticate(req, res, (err) => (err ? next(err) : authorize(req, res, next)))
+);
+app.use((req, res, next) => {
+    res.set('Cache-Control', 'no-store');
+    res.set('X-Content-Type-Options', 'nosniff');
+    next();
+});
+const adminOnly = auth.allowRoles('admin');
+
+// ---------- 4. ENDPOINTS ----------
 
 // Plans
 app.get('/plans', (req, res) => {
     res.json(db.prepare('SELECT * FROM plans').all());
 });
-app.post('/plans', (req, res) => {
+app.post('/plans', adminOnly, (req, res) => {
     const { name, price, cycle } = req.body;
     if (!name || !(price > 0) || !['monthly', 'yearly'].includes(cycle))
         return res.status(400).json({ error: 'name, price (>0) and cycle (monthly/yearly) required' });
@@ -376,9 +398,8 @@ app.get('/dashboard-stats', (req, res) => {
     });
 });
 
+app.use(['/taxes', '/discount-rules'], adminOnly);
 require('./routes/pricingAdmin')(app, db);
-require('./routes/pricingAdmin')(app, db);
-const auth = require('./auth/middleware')(db);
 require('./routes/auth')(app, db, auth);
 
 // ---------- ERROR HANDLING ----------

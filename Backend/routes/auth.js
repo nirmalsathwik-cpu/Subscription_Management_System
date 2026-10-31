@@ -2,19 +2,25 @@
 // Registered from server.js:  require('./routes/auth')(app, db, auth);
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
-const { passwordProblems, hashPassword, verifyPassword, normalizeEmail, isValidEmail } = require('../auth/passwords');
+const { passwordProblems, hashPassword, verifyPassword, normalizeEmail, isValidEmail, normalizeLoginId, isValidUsername } = require('../auth/passwords');
+const makeLoginLimiter = require('../auth/loginLimiter');
 
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 const RESET_MINUTES = 60;
 // Compared against when the email is unknown, so "no such user" takes as long as "wrong password"
 const DUMMY_HASH = bcrypt.hashSync('dummy-password', 10);
 
+const ROLE_FOR = { admin: 'admin', employee: 'staff' };
+const LOGIN_TYPE_OF = { admin: 'Admin', staff: 'Employee' };
 const sha256 = (s) => crypto.createHash('sha256').update(s).digest('hex');
 const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next); // Express 4 doesn't catch async errors
 const isConstraint = (e) => String(e.code).startsWith('SQLITE_CONSTRAINT');
 
 module.exports = function registerAuth(app, db, { signToken, requireRole, requireAuth }) {
-    const getUser = (id) => db.prepare('SELECT id, email, role, customer_id FROM users WHERE id=?').get(id);
+    const getUser = (id) => db.prepare('SELECT id, email, username, role, customer_id FROM users WHERE id=?').get(id);
+    const limiter = makeLoginLimiter();
+    const findByLoginId = (id) =>
+        db.prepare(id.includes('@') ? 'SELECT * FROM users WHERE email=?' : 'SELECT * FROM users WHERE username=?').get(id);
 
     function badPassword(res, password) {
         const problems = passwordProblems(password);
@@ -53,10 +59,34 @@ module.exports = function registerAuth(app, db, { signToken, requireRole, requir
 
     // ----- Login -----
     app.post('/auth/login', wrap(async (req, res) => {
-        const email = normalizeEmail(req.body.email);
-        const row = db.prepare('SELECT * FROM users WHERE email=?').get(email);
-        const ok = await verifyPassword(req.body.password, row ? row.password_hash : DUMMY_HASH);
-        if (!row || !ok) return res.status(401).json({ error: 'invalid email or password' });
+        const body = req.body || {};
+        const loginId = normalizeLoginId(body.loginId !== undefined ? body.loginId : body.email);
+        const choice = body.role === undefined || body.role === null ? null : String(body.role);
+        if (choice !== null && !ROLE_FOR[choice])
+            return res.status(400).json({ error: 'choose Admin or Employee login' });
+
+        const wait = limiter.retryAfter(loginId, req.ip);
+        if (wait) {
+            res.set('Retry-After', String(wait));
+            return res.status(429).json({ error: `Too many failed attempts. Try again in ${Math.ceil(wait / 60)} minute(s).` });
+        }
+
+        const row = findByLoginId(loginId);
+        const ok = await verifyPassword(body.password, row ? row.password_hash : DUMMY_HASH);
+        if (!row || !ok) {
+            limiter.fail(loginId, req.ip);
+            return res.status(401).json({ error: 'Invalid login ID or password.' });
+        }
+        limiter.succeed(loginId, req.ip);
+
+        if (choice !== null && row.role !== ROLE_FOR[choice]) {
+            const mine = LOGIN_TYPE_OF[row.role];
+            return res.status(403).json({
+                error: mine
+                    ? `These credentials belong to an ${mine} account. Select "${mine}" to sign in.`
+                    : 'This account cannot sign in here.',
+            });
+        }
         const user = getUser(row.id);
         res.json({ token: signToken(user), user });
     }));
@@ -101,6 +131,12 @@ module.exports = function registerAuth(app, db, { signToken, requireRole, requir
     app.post('/users/staff', requireRole('admin'), wrap(async (req, res) => {
         const email = normalizeEmail(req.body.email);
         if (!isValidEmail(email)) return res.status(400).json({ error: 'invalid email' });
+        const username = req.body.username ? normalizeLoginId(req.body.username) : null;
+        if (username && !isValidUsername(username))
+            return res.status(400).json({ error: 'username must be 3-32 characters: letters, digits, . _ -' });
+// ...
+        db.prepare('INSERT INTO users (email, username, password_hash, role) VALUES (?,?,?,?)')
+            .run(email, username, hash, 'staff').lastInsertRowid;
         if (badPassword(res, req.body.password)) return;
         const hash = await hashPassword(req.body.password);
         try {

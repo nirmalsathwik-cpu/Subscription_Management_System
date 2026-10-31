@@ -23,4 +23,9 @@ const verifyPassword = (pw, hash) => bcrypt.compare(String(pw || ''), hash);
 const normalizeEmail = (e) => String(e || '').trim().toLowerCase();
 const isValidEmail = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e) && e.length <= 254;
 
+const normalizeLoginId = (v) => String(v || '').trim().toLowerCase().slice(0, 254);
+const isValidUsername = (u) => /^[a-z0-9._-]{3,32}$/.test(u);
+
+module.exports = { passwordProblems, hashPassword, verifyPassword, normalizeEmail, isValidEmail, normalizeLoginId, isValidUsername };
+
 module.exports = { passwordProblems, hashPassword, verifyPassword, normalizeEmail, isValidEmail };
