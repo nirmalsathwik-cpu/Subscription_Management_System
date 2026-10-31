@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS payments (
 CREATE TABLE IF NOT EXISTS app_state (key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE IF NOT EXISTS taxes (
                                      id INTEGER PRIMARY KEY AUTOINCREMENT,
-                                     name TEXT NOT NULL,
+                                     name TEXT NOT NULL UNIQUE,
                                      rate REAL NOT NULL CHECK(rate >= 0 AND rate <= 100)   -- percent
     );
 CREATE TABLE IF NOT EXISTS products (
@@ -96,9 +96,32 @@ CREATE TABLE IF NOT EXISTS invoice_lines (
     amount REAL NOT NULL
     );
 
+-- ---- Tax and discount rules (payments/pricing side) ----
+CREATE TABLE IF NOT EXISTS taxes (
+                                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                     name TEXT NOT NULL UNIQUE,
+                                     rate REAL NOT NULL CHECK(rate >= 0 AND rate <= 100)
+);
+CREATE TABLE IF NOT EXISTS discount_rules (
+                                              id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                              name TEXT NOT NULL,
+                                              type TEXT NOT NULL CHECK(type IN ('percent','fixed')),
+                                              value REAL NOT NULL CHECK(value > 0),
+                                              min_purchase REAL CHECK(min_purchase IS NULL OR min_purchase >= 0),
+                                              min_quantity INTEGER CHECK(min_quantity IS NULL OR min_quantity >= 1),
+                                              start_date TEXT,
+                                              end_date TEXT,
+                                              usage_limit INTEGER CHECK(usage_limit IS NULL OR usage_limit >= 1),
+                                              times_used INTEGER NOT NULL DEFAULT 0,
+                                              product_id INTEGER,
+                                              subscription_id INTEGER REFERENCES subscriptions(id)
+);
+CREATE INDEX IF NOT EXISTS idx_disc_dates ON discount_rules(start_date, end_date);
 
 CREATE INDEX IF NOT EXISTS idx_subs_billing ON subscriptions(status, next_billing_date);
 CREATE INDEX IF NOT EXISTS idx_subs_customer ON subscriptions(customer_id);
 CREATE INDEX IF NOT EXISTS idx_inv_status_due ON invoices(status, due_date);
 CREATE INDEX IF NOT EXISTS idx_inv_paid ON invoices(paid_at);
 CREATE INDEX IF NOT EXISTS idx_pay_invoice ON payments(invoice_id);
+
+

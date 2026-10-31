@@ -376,7 +376,11 @@ app.get('/dashboard-stats', (req, res) => {
     });
 });
 
+require('./routes/pricingAdmin')(app, db);
+
 // ---------- ERROR HANDLING ----------
+
+
 app.use((err, req, res, next) => {
     if (err.type === 'entity.parse.failed') return res.status(400).json({ error: 'invalid JSON body' });
     if (String(err.code || '').startsWith('SQLITE_CONSTRAINT'))
