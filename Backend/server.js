@@ -377,6 +377,9 @@ app.get('/dashboard-stats', (req, res) => {
 });
 
 require('./routes/pricingAdmin')(app, db);
+require('./routes/pricingAdmin')(app, db);
+const auth = require('./auth/middleware')(db);
+require('./routes/auth')(app, db, auth);
 
 // ---------- ERROR HANDLING ----------
 

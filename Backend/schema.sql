@@ -124,4 +124,21 @@ CREATE INDEX IF NOT EXISTS idx_inv_status_due ON invoices(status, due_date);
 CREATE INDEX IF NOT EXISTS idx_inv_paid ON invoices(paid_at);
 CREATE INDEX IF NOT EXISTS idx_pay_invoice ON payments(invoice_id);
 
+-- ---- Accounts and login ----
+CREATE TABLE IF NOT EXISTS users (
+                                     id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                                     email         TEXT NOT NULL UNIQUE,              -- always stored lowercase
+                                     password_hash TEXT NOT NULL,
+                                     role          TEXT NOT NULL CHECK(role IN ('admin','staff','customer')),
+                                     customer_id   INTEGER REFERENCES customers(id),  -- set only for role='customer'
+                                     created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_users_customer ON users(customer_id);
 
+CREATE TABLE IF NOT EXISTS password_resets (
+                                               id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                                               user_id    INTEGER NOT NULL REFERENCES users(id),
+                                               token_hash TEXT NOT NULL UNIQUE,                 -- only the hash is stored, never the token
+                                               expires_at TEXT NOT NULL,
+                                               used_at    TEXT                                  -- NULL until the link is used
+);
