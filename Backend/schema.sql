@@ -127,18 +127,15 @@ CREATE INDEX IF NOT EXISTS idx_pay_invoice ON payments(invoice_id);
 -- ---- Accounts and login ----
 CREATE TABLE IF NOT EXISTS users (
                                      id            INTEGER PRIMARY KEY AUTOINCREMENT,
-                                     email         TEXT NOT NULL UNIQUE,
-    -- add this column right after the email column
+                                     email         TEXT NOT NULL UNIQUE,              -- always stored lowercase
                                      username      TEXT,                              -- optional login ID (lowercase, no "@")
-
--- add this line right after idx_users_customer
-                                     CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username);-- always stored lowercase
                                      password_hash TEXT NOT NULL,
                                      role          TEXT NOT NULL CHECK(role IN ('admin','staff','customer')),
                                      customer_id   INTEGER REFERENCES customers(id),  -- set only for role='customer'
                                      created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_users_customer ON users(customer_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username);
 
 CREATE TABLE IF NOT EXISTS password_resets (
                                                id         INTEGER PRIMARY KEY AUTOINCREMENT,

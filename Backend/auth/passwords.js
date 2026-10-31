@@ -27,5 +27,3 @@ const normalizeLoginId = (v) => String(v || '').trim().toLowerCase().slice(0, 25
 const isValidUsername = (u) => /^[a-z0-9._-]{3,32}$/.test(u);
 
 module.exports = { passwordProblems, hashPassword, verifyPassword, normalizeEmail, isValidEmail, normalizeLoginId, isValidUsername };
-
-module.exports = { passwordProblems, hashPassword, verifyPassword, normalizeEmail, isValidEmail };

@@ -134,17 +134,14 @@ module.exports = function registerAuth(app, db, { signToken, requireRole, requir
         const username = req.body.username ? normalizeLoginId(req.body.username) : null;
         if (username && !isValidUsername(username))
             return res.status(400).json({ error: 'username must be 3-32 characters: letters, digits, . _ -' });
-// ...
-        db.prepare('INSERT INTO users (email, username, password_hash, role) VALUES (?,?,?,?)')
-            .run(email, username, hash, 'staff').lastInsertRowid;
         if (badPassword(res, req.body.password)) return;
         const hash = await hashPassword(req.body.password);
         try {
-            const id = db.prepare('INSERT INTO users (email, password_hash, role) VALUES (?,?,?)')
-                .run(email, hash, 'staff').lastInsertRowid;
+            const id = db.prepare('INSERT INTO users (email, username, password_hash, role) VALUES (?,?,?,?)')
+                .run(email, username, hash, 'staff').lastInsertRowid;
             res.status(201).json({ user: getUser(id) });
         } catch (e) {
-            if (isConstraint(e)) return res.status(409).json({ error: 'an account with this email already exists' });
+            if (isConstraint(e)) return res.status(409).json({ error: 'an account with this email or username already exists' });
             throw e;
         }
     }));
