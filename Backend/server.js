@@ -63,6 +63,21 @@ CREATE INDEX IF NOT EXISTS idx_subs_customer ON subscriptions(customer_id);
 CREATE INDEX IF NOT EXISTS idx_inv_status_due ON invoices(status, due_date);
 CREATE INDEX IF NOT EXISTS idx_inv_paid ON invoices(paid_at);
 CREATE INDEX IF NOT EXISTS idx_pay_invoice ON payments(invoice_id);
+
+-- invoices: add 'void'
+status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','paid','overdue','void')),
+       
+       -- payments: add gateway_ref
+CREATE TABLE IF NOT EXISTS payments (
+                                      id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                      invoice_id INTEGER NOT NULL REFERENCES invoices(id),
+  amount REAL NOT NULL,
+  method TEXT,
+  status TEXT NOT NULL CHECK(status IN ('success','failed')),
+  note TEXT,
+  paid_on TEXT NOT NULL,
+  gateway_ref TEXT UNIQUE
+  );
 `);
 
 // ---------- HELPERS ----------
@@ -104,6 +119,19 @@ const safeEqual = (a, b) => {
   const y = Buffer.from(String(b || ''));
   return x.length === y.length && crypto.timingSafeEqual(x, y);
 };
+
+function logPayment(invoiceId, amount, method, status, note, ref) {
+  db.prepare(
+      'INSERT INTO payments (invoice_id, amount, method, status, note, paid_on, gateway_ref) VALUES (?,?,?,?,?,?,?)'
+  ).run(invoiceId, amount, method || null, status, note || null, today(), ref || null);
+}
+
+// Your partner calls this when closing a subscription
+function voidUnpaidInvoices(subscriptionId) {
+  return db
+      .prepare("UPDATE invoices SET status='void' WHERE subscription_id=? AND status IN ('pending','overdue')")
+      .run(subscriptionId).changes;
+}
 
 // ---------- 2. SEED DATA (runs only once) ----------
 if (db.prepare('SELECT COUNT(*) c FROM plans').get().c === 0) {
@@ -321,22 +349,35 @@ app.post('/payment-webhook', (req, res) => {
   if (!safeEqual(req.get('x-webhook-secret'), WEBHOOK_SECRET))
     return res.status(401).json({ error: 'invalid webhook secret' });
 
-  const { invoice_id, amount, status, method, note } = req.body;
+  const { invoice_id, amount, status, method, note, gateway_ref } = req.body;
   if (!['success', 'failed'].includes(status))
     return res.status(400).json({ error: "status must be 'success' or 'failed'" });
+
+  const amt = Number(amount);
+  if (!Number.isFinite(amt) || amt <= 0)
+    return res.status(400).json({ error: 'amount must be a positive number' });
+
+  // Idempotency: a retried webhook with the same gateway_ref is acknowledged, not re-processed
+  if (gateway_ref) {
+    const prev = db.prepare('SELECT status FROM payments WHERE gateway_ref=?').get(String(gateway_ref));
+    if (prev) return res.json({ ok: true, duplicate: true, recorded: prev.status });
+  }
 
   const inv = db.prepare('SELECT * FROM invoices WHERE id=?').get(invoice_id);
   if (!inv) return res.status(404).json({ error: 'unknown invoice' });
   if (inv.status === 'paid') return res.status(409).json({ error: 'already paid' });
-  if (round2(Number(amount)) !== round2(inv.amount))
+  if (inv.status === 'void') return res.status(409).json({ error: 'invoice is void' });
+
+  // Rule: exact amount only (no partial or over-payments)
+  if (round2(amt) !== round2(inv.amount)) {
+    logPayment(inv.id, round2(amt), method, 'failed', `rejected: amount mismatch (expected ${round2(inv.amount)})`, null);
     return res.status(400).json({ error: 'amount mismatch' });
+  }
 
   db.transaction(() => {
-    db.prepare(
-      'INSERT INTO payments (invoice_id, amount, method, status, note, paid_on) VALUES (?,?,?,?,?,?)'
-    ).run(invoice_id, round2(Number(amount)), method || null, status, note || null, today());
+    logPayment(inv.id, round2(amt), method, status, note, gateway_ref);
     if (status === 'success')
-      db.prepare("UPDATE invoices SET status='paid', paid_at=? WHERE id=?").run(today(), invoice_id);
+      db.prepare("UPDATE invoices SET status='paid', paid_at=? WHERE id=?").run(today(), inv.id);
   })();
 
   res.json({ ok: true, recorded: status });
