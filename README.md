@@ -1,9 +1,8 @@
-# Subscription_Management_System
+
+# Subscription Management System
 
 “5,000 subscriptions and 32,000 invoices, every page under half a second.”
 
-
-# Subscription Management System
 
 **Ledgerline**: one platform to run plans, subscriptions and recurring billing in one place.
 
